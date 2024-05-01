@@ -1,0 +1,7 @@
+.cache
+build
+*.o
+*.out
+.env
+Testing
+CMakeUserPresets.json
