@@ -2,6 +2,23 @@
 // License: BSD. https://github.com/hit9/segbitset
 // C++ bitset on segment-tree for better performance on sparse bitsets.
 // Version: 0.1.0
+//
+// Tree structure schematic diagram::
+//
+//   [                  1                   ]     => root  -+
+//   [        1         ][       0          ]               |--> OR summary of descendants
+//   [   1    ][   0    ][   0    ][   0    ]              -+
+//   [ 1 ][ 0 ][ 0 ][ 0 ][ 0 ][ 0 ][ 0 ][ 0 ]     => bit data itself
+//
+// Core acceleration points:
+//  1. any(),none() just reads root bit's value, O(1)
+//  2. quickly skip subtrees that are all 0, for and,or,xor operations.
+//  3. find positions storing true bits faster for sparse bits.
+//
+// Tradeoffs:
+//  1. set(pos),test(pos),flip(pos) now are slower than std::bitset, O(logN).
+//  2. occupying x4 times space than an equivalent std::bitset.
+//  3. shift operations and to_string/to_ulong aren't implementated yet.
 
 #ifndef __HIT9_SEGBITSET
 #define __HIT9_SEGBITSET
@@ -18,19 +35,18 @@ using size_t = std::size_t;
 template <size_t N>
 class segbitset {
   using __segbitset = segbitset<N>;
-
-  static const size_t _N = 1 + (N << 2);
-  using __bitset = std::bitset<_N>;
+  using __bitset = std::bitset<1 + (N << 2)>;
 
  public:
-  class reference {  // reference to bit
+  class reference {  // reference to a bit
    private:
     __segbitset& s;
     const size_t x = 0;
 
    public:
     constexpr explicit reference(__segbitset& s, size_t x) : s(s), x(x) {}
-    constexpr reference& operator=(bool x) noexcept;            // for b[i] = x;
+
+    constexpr reference& operator=(bool value) noexcept;        // for b[i] = value;
     constexpr reference& operator=(const reference&) noexcept;  // for b[i] = b[j];
     constexpr bool operator~() const noexcept;                  // flips the bit
     constexpr operator bool() const noexcept;                   // for x = b[i];
@@ -38,39 +54,64 @@ class segbitset {
   };
 
   constexpr explicit segbitset() noexcept {}
+  // creates a segbitset from a std::bitset
   constexpr segbitset(const std::bitset<N>& a) noexcept;
-  constexpr segbitset(const __segbitset& o) noexcept;  // copy
+  // copy constructor
+  constexpr segbitset(const __segbitset& o) noexcept;
 
+  // returns the number of bits that the bitset holds
   constexpr size_t size() const noexcept { return N; }
-
+  // returns the number of bits set to true
   constexpr size_t count() const noexcept;
 
+  // returns the value of the bit at the position pos (counting from 0).
+  // throws std::out_of_range if pos is invalid.
   constexpr bool test(size_t pos) const;
+  // checks if all of the bits are set to true
   constexpr bool all() const noexcept;
+  // checks if any of the bits are set to true
   constexpr bool any() const noexcept;
+  // checks if none of the bits are set to true
   constexpr bool none() const noexcept;
-
+  // sets all bits to true.
   constexpr __segbitset& set() noexcept;
+  // sets the bit at position pos to the given value.
+  // throws std::out_of_range if pos is invalid.
   constexpr __segbitset& set(size_t pos, bool value = true);
+  // sets all bits to false.
   constexpr __segbitset& reset() noexcept;
+  // sets the bit at position pos to false.
+  // throws std::out_of_range if pos is invalid.
   constexpr __segbitset& reset(size_t pos);
+  // flips all bits (like operator~, but in-place).
   constexpr __segbitset& flip() noexcept;
+  // flips the bit at the position pos.
+  // throws std::out_of_range if pos is invalid.
   constexpr __segbitset& flip(size_t pos);
-
+  // find the first position where stores a true bit, returns true if found.
+  // The position found will be assigned to given parameter pos.
   constexpr bool first(size_t& pos) const noexcept;
+  // find the next position where stores a true bit, returns true if found.
+  // The position found will be assigned to given parameter pos.
   constexpr bool next(size_t& pos) const noexcept;
-
-  using callback = std::function<const void(size_t l)>;
+  // callback is a readonly function that receives a position as parameter.
+  using callback = std::function<const void(size_t pos)>;
+  // iterates all true bits from left to right and execute given callback function,
+  // with the position of true bits as a argument.
+  // foreach1 should be faster than first & next, since it dosen't require walking from root again.
   constexpr void foreach1(callback& cb) const noexcept;
-
+  // constructs and returns an equivalent std::bitset from this segbitset.
   constexpr std::bitset<N> to_bitset() const noexcept;
+  // fill given std::bitset as an equivalent of this segbitset.
+  // the given bitset should be all zero in advance.
+  constexpr void to_bitset(std::bitset<N>& a) noexcept;
 
-  constexpr bool operator==(const __segbitset& rhs) const noexcept;
+  constexpr bool operator==(const __segbitset& rhs) const noexcept;  // for b == rhs;
   constexpr bool operator!=(const __segbitset& rhs) const noexcept { return !(*this == rhs); }
-
+  // b[pos] returns the value of bit at position pos.
   constexpr bool operator[](size_t pos) const { return test(pos); }
+  // b[pos] returns a reference to the bit at position pos.
   constexpr reference operator[](size_t pos);
-
   constexpr __segbitset& operator&=(const __segbitset& other) noexcept;  // for b &= other
   constexpr __segbitset& operator|=(const __segbitset& other) noexcept;  // for b |= other
   constexpr __segbitset& operator^=(const __segbitset& other) noexcept;  // for b ^= other
@@ -81,15 +122,16 @@ class segbitset {
 
   inline constexpr size_t __ls(size_t x) const { return x << 1; }
   inline constexpr size_t __rs(size_t x) const { return (x << 1) | 1; }
-
   constexpr void __pushup(size_t x) noexcept;
   constexpr void __pushup_to_root(size_t x) noexcept;
   constexpr void __build(const std::bitset<N>& a, size_t l, size_t r, size_t x) noexcept;
   constexpr size_t __count(size_t l, size_t r, size_t x) const noexcept;
-  constexpr size_t __find(size_t pos, size_t l, size_t r, size_t x) const noexcept;
+  constexpr size_t __find(size_t pos, size_t l, size_t r, size_t x) const noexcept;  // helper
   constexpr bool __all(size_t l, size_t r, size_t x) const noexcept;
   constexpr void __flip(size_t l, size_t r, size_t x) noexcept;
+  constexpr void __reset(size_t l, size_t r, size_t x) noexcept;
   constexpr bool __equal(const __segbitset& rhs, size_t l, size_t r, size_t x) const noexcept;
+  constexpr void __copy(const __segbitset& o, size_t l, size_t r, size_t x) noexcept;
   constexpr void __and_assign(const __segbitset& other, size_t l, size_t r, size_t x) noexcept;
   constexpr void __or_assign(const __segbitset& other, size_t l, size_t r, size_t x) noexcept;
   constexpr void __xor_assign(const __segbitset& other, size_t l, size_t r, size_t x) noexcept;
@@ -133,7 +175,27 @@ constexpr segbitset<N>::segbitset(const std::bitset<N>& a) noexcept {
 }
 
 template <size_t N>
-constexpr segbitset<N>::segbitset(const __segbitset& o) noexcept : tree(o.tree) {}
+constexpr void segbitset<N>::__copy(const segbitset<N>& o, size_t l, size_t r, size_t x) noexcept {
+  if (!tree[x] && !o.tree[x]) return;  // children of both are all 0, tree won't change.
+  if (l == r) {
+    tree[x] = o.tree[x];
+    return;
+  }
+  auto m = (l + r) >> 1;
+  __copy(o, l, m, __ls(x));
+  __copy(o, r, m + 1, __rs(x));
+  __pushup(x);
+}
+
+template <size_t N>
+constexpr segbitset<N>::segbitset(const __segbitset& o) noexcept {
+  // TODO: performance depends..
+  // which is faster?
+  // 1. copy o.tree directly, x4 time slower than a std::bitset<N> copy.
+  // 2. __copy, but seems working not that fast.
+  // 3. tree reset, and then |= other, seems a bit faster than 2.
+  __copy(o, 1, N, 1);
+}
 
 template <size_t N>
 constexpr size_t segbitset<N>::__count(size_t l, size_t r, size_t x) const noexcept {
@@ -167,7 +229,7 @@ constexpr bool segbitset<N>::__all(size_t l, size_t r, size_t x) const noexcept 
   if (!tree[x]) return false;
   if (l == r) return tree[x];
   auto m = (l + r) >> 1;
-  return __all(l, m, __ls(x)) && __all(m + 1, r, __rs(x));
+  return __all(l, m, __ls(x)) && __all(m + 1, r, __rs(x));  // && has short circuit effect
 }
 
 template <size_t N>
@@ -177,17 +239,17 @@ constexpr bool segbitset<N>::all() const noexcept {
 
 template <size_t N>
 constexpr bool segbitset<N>::any() const noexcept {
-  return tree[1];
+  return tree[1];  // root == 1 indicates the whole tree contains true bits
 }
 
 template <size_t N>
 constexpr bool segbitset<N>::none() const noexcept {
-  return !tree[1];
+  return !tree[1];  // root == 0 indicates the whole tree contains no true bits
 }
 
 template <size_t N>
 constexpr segbitset<N>& segbitset<N>::set() noexcept {
-  tree.set();
+  tree.set();  // TODO: any faster solution?
   return *this;
 }
 
@@ -201,8 +263,24 @@ constexpr segbitset<N>& segbitset<N>::set(size_t pos, bool value) {
 }
 
 template <size_t N>
+constexpr void segbitset<N>::__reset(size_t l, size_t r, size_t x) noexcept {
+  if (!tree[x]) return;  // won't change
+  if (l == r) {
+    tree[x] = 0;
+    return;
+  }
+  auto m = (l + r) >> 1;
+  __reset(l, m, __ls(x));
+  __reset(m + 1, r, __rs(x));
+  __pushup(x);
+}
+
+template <size_t N>
 constexpr segbitset<N>& segbitset<N>::reset() noexcept {
-  tree.reset();
+  // Not using tree.reset() (aka std::bitset's)
+  // for hoping better performance on sparse dataset.
+  // TODO: performance
+  __reset(1, N, 1);
   return *this;
 }
 
@@ -329,8 +407,8 @@ constexpr segbitset<N>& segbitset<N>::operator^=(const __segbitset& other) noexc
 
 template <size_t N>
 constexpr segbitset<N> segbitset<N>::operator~() const noexcept {
-  auto clone = *this;
-  clone.flip();  // inplace
+  decltype(*this) clone(*this);  // copy
+  clone.flip();                  // inplace
   return clone;
 }
 
@@ -354,9 +432,14 @@ constexpr std::bitset<N> segbitset<N>::to_bitset() const noexcept {
 }
 
 template <size_t N>
+constexpr void segbitset<N>::to_bitset(std::bitset<N>& a) noexcept {
+  __to_bitset(a, 1, N, 1);
+}
+
+template <size_t N>
 constexpr void segbitset<N>::__next(size_t pos, size_t l, size_t r, size_t x, size_t& ans) const noexcept {
   if (!tree[x]) return;
-  if (r < pos) return;
+  if (r < pos) return;  // skip previously scanned intervals.
   if (l == r) {
     ans = l;
     return;
@@ -377,7 +460,7 @@ constexpr bool segbitset<N>::first(size_t& pos) const noexcept {
 
 template <size_t N>
 constexpr bool segbitset<N>::next(size_t& pos) const noexcept {
-  ++pos;
+  ++pos;  // excludes previous result
   size_t ans = 0;
   __next(pos + 1, 1, N, 1, ans);
   if (!ans) return false;
