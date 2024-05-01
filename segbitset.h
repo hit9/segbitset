@@ -61,7 +61,7 @@ class segbitset {
   constexpr bool next(size_t& pos) const noexcept;
 
   using callback = std::function<const void(size_t l)>;
-  constexpr void foreach (callback& cb) const noexcept;
+  constexpr void foreach1(callback& cb) const noexcept;
 
   constexpr std::bitset<N> to_bitset() const noexcept;
 
@@ -95,7 +95,7 @@ class segbitset {
   constexpr void __xor_assign(const __segbitset& other, size_t l, size_t r, size_t x) noexcept;
   constexpr void __to_bitset(__bitset& a, size_t l, size_t r, size_t x) noexcept;
   constexpr void __next(size_t pos, size_t l, size_t r, size_t x, size_t& ans) const noexcept;
-  constexpr void __foreach(callback& cb, size_t l, size_t r, size_t x) const noexcept;
+  constexpr void __foreach1(callback& cb, size_t l, size_t r, size_t x) const noexcept;
 
   friend class reference;
 };
@@ -358,7 +358,7 @@ constexpr void segbitset<N>::__next(size_t pos, size_t l, size_t r, size_t x, si
   if (!tree[x]) return;
   if (r < pos) return;
   if (l == r) {
-    if (tree[x]) ans = l;
+    ans = l;
     return;
   }
   auto m = (l + r) >> 1;
@@ -386,20 +386,20 @@ constexpr bool segbitset<N>::next(size_t& pos) const noexcept {
 }
 
 template <size_t N>
-constexpr void segbitset<N>::__foreach(callback& cb, size_t l, size_t r, size_t x) const noexcept {
+constexpr void segbitset<N>::__foreach1(callback& cb, size_t l, size_t r, size_t x) const noexcept {
   if (!tree[x]) return;
   if (l == r) {
-    if (tree[x]) cb(l - 1);
+    cb(l - 1);
     return;
   }
   auto m = (l + r) >> 1;
-  __foreach(cb, l, m, __ls(x));
-  __foreach(cb, m + 1, r, __rs(x));
+  __foreach1(cb, l, m, __ls(x));
+  __foreach1(cb, m + 1, r, __rs(x));
 }
 
 template <size_t N>
-constexpr void segbitset<N>::foreach (callback& cb) const noexcept {
-  __foreach(cb, 1, N, 1);
+constexpr void segbitset<N>::foreach1(callback& cb) const noexcept {
+  __foreach1(cb, 1, N, 1);
 }
 
 ////////////////////////////////////////
