@@ -12,10 +12,16 @@ cmake-build:
 		-DCMAKE_CXX_STANDARD=20
 
 build-test:
-	cd build && make
+	cd build && make segbitset_tests
 
 run-tests: build-test
 	ctest --test-dir ./build --output-on-failure
+
+build-benchmark:
+	cd build && make segbitset_benchmark
+
+run-benchmark: build-benchmark
+	./build/segbitset_benchmark
 
 clean:
 	make -C build clean

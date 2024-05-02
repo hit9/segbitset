@@ -32,7 +32,7 @@ namespace segbitset {
 
 using size_t = std::size_t;
 
-// callback is a readonly function that receives a position as parameter.
+// callback is a function that receives a position as parameter.
 using callback = std::function<void(size_t pos)>;
 
 template <size_t N>
@@ -200,10 +200,17 @@ constexpr size_t segbitset<N>::count() const noexcept {
 
 template <size_t N>
 constexpr size_t segbitset<N>::__find(size_t pos, size_t l, size_t r, size_t x) const noexcept {
-  if (l == r) return x;
-  auto m = (l + r) >> 1;
-  if (pos <= m) return __find(pos, l, m, __ls(x));
-  return __find(pos, m + 1, r, __rs(x));  // tail-recursive
+  while (l != r) {
+    auto m = (l + r) >> 1;
+    if (pos <= m) {
+      r = m;
+      x = __ls(x);
+    } else {
+      l = m + 1;
+      x = __rs(x);
+    }
+  }
+  return x;
 }
 
 template <size_t N>
@@ -397,7 +404,7 @@ constexpr segbitset<N>& segbitset<N>::operator^=(const __segbitset& other) noexc
 template <size_t N>
 constexpr segbitset<N> segbitset<N>::operator~() const noexcept {
   auto clone = *this;
-  clone.flip();                  // inplace
+  clone.flip();  // inplace
   return clone;
 }
 
@@ -435,8 +442,9 @@ constexpr void segbitset<N>::__next(size_t pos, size_t l, size_t r, size_t x, si
     return;
   }
   auto m = (l + r) >> 1;
-  if (!ans) __next(pos, l, m, __ls(x), ans);
-  if (!ans) __next(pos, m + 1, r, __rs(x), ans);
+  auto lx = __ls(x), rx = __rs(x);
+  if (!ans && tree[lx]) __next(pos, l, m, lx, ans);
+  if (!ans && tree[rx]) __next(pos, m + 1, r, rx, ans);
 }
 
 template <size_t N>
@@ -462,8 +470,9 @@ constexpr void segbitset<N>::__foreach1(callback& cb, size_t l, size_t r, size_t
     return;
   }
   auto m = (l + r) >> 1;
-  __foreach1(cb, l, m, __ls(x));
-  __foreach1(cb, m + 1, r, __rs(x));
+  auto lx = __ls(x), rx = __rs(x);
+  if (tree[lx]) __foreach1(cb, l, m, lx);
+  if (tree[rx]) __foreach1(cb, m + 1, r, rx);
 }
 
 template <size_t N>
