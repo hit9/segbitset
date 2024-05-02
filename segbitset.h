@@ -32,10 +32,13 @@ namespace segbitset {
 
 using size_t = std::size_t;
 
+// callback is a readonly function that receives a position as parameter.
+using callback = std::function<void(size_t pos)>;
+
 template <size_t N>
 class segbitset {
   using __segbitset = segbitset<N>;
-  using __bitset = std::bitset<1 + (N << 2)>;
+  using __bitset = std::bitset<1 + (N << 2)>;  // x4 space, don't use position 0
 
  public:
   class reference {  // reference to a bit
@@ -55,12 +58,14 @@ class segbitset {
 
   constexpr explicit segbitset() noexcept {}
   // creates a segbitset from a std::bitset
-  constexpr segbitset(const std::bitset<N>& a) noexcept;
+  constexpr segbitset(const std::bitset<N>& a) noexcept;  // cppcheck-suppress noExplicitConstructor
   // copy constructor
-  constexpr segbitset(const __segbitset& o) noexcept;
+  constexpr segbitset(const __segbitset& o) noexcept;  // cppcheck-suppress noExplicitConstructor
 
-  // returns the number of bits that the bitset holds
+  // returns the number of bits that this segbitset holds
   constexpr size_t size() const noexcept { return N; }
+  // returns the capacity of bits this segbitset occupies.
+  constexpr size_t capacity() const noexcept { return tree.size(); }
   // returns the number of bits set to true
   constexpr size_t count() const noexcept;
 
@@ -88,14 +93,11 @@ class segbitset {
   // flips the bit at the position pos.
   // throws std::out_of_range if pos is invalid.
   constexpr __segbitset& flip(size_t pos);
-  // find the first position where stores a true bit, returns true if found.
-  // The position found will be assigned to given parameter pos.
-  constexpr bool first(size_t& pos) const noexcept;
-  // find the next position where stores a true bit, returns true if found.
-  // The position found will be assigned to given parameter pos.
-  constexpr bool next(size_t& pos) const noexcept;
-  // callback is a readonly function that receives a position as parameter.
-  using callback = std::function<const void(size_t pos)>;
+  // find the first position where stores a true bit, returns size of this segbitset if not found.
+  constexpr size_t first() const noexcept;
+  // find the next position where stores a true bit from the right part of given position, returns size of
+  // this segbitset if not found.
+  constexpr size_t next(size_t pos) const noexcept;
   // iterates all true bits from left to right and execute given callback function,
   // with the position of true bits as a argument.
   // foreach1 should be faster than first & next, since it dosen't require walking from root again.
@@ -106,6 +108,7 @@ class segbitset {
   // the given bitset should be all zero in advance.
   constexpr void to_bitset(std::bitset<N>& a) noexcept;
 
+  constexpr __segbitset& operator=(const __segbitset& o) noexcept;   // copy assign operator
   constexpr bool operator==(const __segbitset& rhs) const noexcept;  // for b == rhs;
   constexpr bool operator!=(const __segbitset& rhs) const noexcept { return !(*this == rhs); }
   // b[pos] returns the value of bit at position pos.
@@ -135,7 +138,7 @@ class segbitset {
   constexpr void __and_assign(const __segbitset& other, size_t l, size_t r, size_t x) noexcept;
   constexpr void __or_assign(const __segbitset& other, size_t l, size_t r, size_t x) noexcept;
   constexpr void __xor_assign(const __segbitset& other, size_t l, size_t r, size_t x) noexcept;
-  constexpr void __to_bitset(__bitset& a, size_t l, size_t r, size_t x) noexcept;
+  constexpr void __to_bitset(std::bitset<N>& a, size_t l, size_t r, size_t x) noexcept;
   constexpr void __next(size_t pos, size_t l, size_t r, size_t x, size_t& ans) const noexcept;
   constexpr void __foreach1(callback& cb, size_t l, size_t r, size_t x) const noexcept;
 
@@ -178,6 +181,11 @@ template <size_t N>
 constexpr segbitset<N>::segbitset(const __segbitset& o) noexcept : tree(o.tree) {}
 
 template <size_t N>
+constexpr segbitset<N>& segbitset<N>::operator=(const __segbitset& o) noexcept {
+  if (&o != this) tree = o.tree;
+}
+
+template <size_t N>
 constexpr size_t segbitset<N>::__count(size_t l, size_t r, size_t x) const noexcept {
   if (!tree[x]) return 0;
   if (l == r) return 1;
@@ -195,7 +203,7 @@ constexpr size_t segbitset<N>::__find(size_t pos, size_t l, size_t r, size_t x) 
   if (l == r) return x;
   auto m = (l + r) >> 1;
   if (pos <= m) return __find(pos, l, m, __ls(x));
-  return __find(pos, m + 1, r, __rs(x));
+  return __find(pos, m + 1, r, __rs(x));  // tail-recursive
 }
 
 template <size_t N>
@@ -297,13 +305,14 @@ constexpr segbitset<N>& segbitset<N>::flip(size_t pos) {
   auto x = __find(pos + 1, 1, N, 1);
   tree[x] = !tree[x];
   __pushup_to_root(x >> 1);
+  return *this;
 }
 
 template <size_t N>
 constexpr bool segbitset<N>::__equal(const segbitset<N>& rhs, size_t l, size_t r, size_t x) const noexcept {
   if (tree[x] != rhs.tree[x]) return false;
   if (!tree[x] && !rhs.tree[x]) return true;  // children of both are all 0.
-  if (l == r) return tree[x] == rhs.tree[x];
+  if (l == r) return true;
   auto m = (l + r) >> 1;
   return __equal(rhs, l, m, __ls(x)) && __equal(rhs, r, m + 1, __rs(x));
 }
@@ -315,16 +324,16 @@ constexpr bool segbitset<N>::operator==(const segbitset<N>& rhs) const noexcept 
 
 template <size_t N>
 constexpr void segbitset<N>::__and_assign(const __segbitset& other, size_t l, size_t r, size_t x) noexcept {
-  if (l == r) {
-    tree[x] = tree[x] & other.tree[x];
-    return;
-  }
   // 0 & 0 -> 0   *
   // 0 & 1 -> 0   *
   // 1 & 0 -> 0
   // 1 & 1 -> 1
   // if children of this tree are all zeros, results won't change.
   if (!tree[x]) return;
+  if (l == r) {
+    tree[x] = tree[x] & other.tree[x];
+    return;
+  }
   auto m = (l + r) >> 1;
   __and_assign(other, l, m, __ls(x));
   __and_assign(other, m + 1, r, __rs(x));
@@ -339,16 +348,16 @@ constexpr segbitset<N>& segbitset<N>::operator&=(const segbitset<N>& other) noex
 
 template <size_t N>
 constexpr void segbitset<N>::__or_assign(const __segbitset& other, size_t l, size_t r, size_t x) noexcept {
-  if (l == r) {
-    tree[x] = tree[x] | other.tree[x];
-    return;
-  }
   // 0 | 0 -> 0   *
   // 0 | 1 -> 1
   // 1 | 0 -> 1   *
   // 1 | 1 -> 1
   // if children of other are all of 0, results of this tree won't change.
   if (!other.tree[x]) return;
+  if (l == r) {
+    tree[x] = tree[x] | other.tree[x];
+    return;
+  }
   auto m = (l + r) >> 1;
   __or_assign(other, l, m, __ls(x));
   __or_assign(other, m + 1, r, __rs(x));
@@ -363,16 +372,16 @@ constexpr segbitset<N>& segbitset<N>::operator|=(const segbitset<N>& other) noex
 
 template <size_t N>
 constexpr void segbitset<N>::__xor_assign(const __segbitset& other, size_t l, size_t r, size_t x) noexcept {
-  if (l == r) {
-    tree[x] = tree[x] ^ other.tree[x];
-    return;
-  }
   // 0 ^ 0 -> 0    *
   // 0 ^ 1 -> 1
   // 1 ^ 0 -> 1    *
   // 1 ^ 1 -> 0
   // if children of other are all 0, tree won't change.
   if (!other.tree[x]) return;
+  if (l == r) {
+    tree[x] = tree[x] ^ other.tree[x];
+    return;
+  }
   auto m = (l + r) >> 1;
   __xor_assign(other, l, m, __ls(x));
   __xor_assign(other, m + 1, r, __rs(x));
@@ -387,27 +396,28 @@ constexpr segbitset<N>& segbitset<N>::operator^=(const __segbitset& other) noexc
 
 template <size_t N>
 constexpr segbitset<N> segbitset<N>::operator~() const noexcept {
-  decltype(*this) clone(*this);  // copy
+  auto clone = *this;
   clone.flip();                  // inplace
   return clone;
 }
 
 template <size_t N>
-constexpr void segbitset<N>::__to_bitset(__bitset& a, size_t l, size_t r, size_t x) noexcept {
+constexpr void segbitset<N>::__to_bitset(std::bitset<N>& a, size_t l, size_t r, size_t x) noexcept {
   if (l == r) {
     a[l - 1] = tree[x];
     return;
   }
 
   auto m = (l + r) >> 1;
-  __to_bitset(l, m, __ls(x));
-  __to_bitset(m + 1, r, __rs(x));
+  __to_bitset(a, l, m, __ls(x));
+  __to_bitset(a, m + 1, r, __rs(x));
 }
 
 template <size_t N>
 constexpr std::bitset<N> segbitset<N>::to_bitset() const noexcept {
   std::bitset<N> a;
-  __to_bitset(a, 1, N, 1);
+  auto self = const_cast<__segbitset*>(this);
+  self->__to_bitset(a, 1, N, 1);
   return a;
 }
 
@@ -430,22 +440,18 @@ constexpr void segbitset<N>::__next(size_t pos, size_t l, size_t r, size_t x, si
 }
 
 template <size_t N>
-constexpr bool segbitset<N>::first(size_t& pos) const noexcept {
+constexpr size_t segbitset<N>::first() const noexcept {
   size_t ans = 0;
   __next(1, 1, N, 1, ans);
-  if (!ans) return false;
-  pos = ans - 1;
-  return true;
+  return ans ? (ans - 1) : N;
 }
 
 template <size_t N>
-constexpr bool segbitset<N>::next(size_t& pos) const noexcept {
+constexpr size_t segbitset<N>::next(size_t pos) const noexcept {
   ++pos;  // excludes previous result
   size_t ans = 0;
   __next(pos + 1, 1, N, 1, ans);
-  if (!ans) return false;
-  pos = ans - 1;
-  return true;
+  return ans ? (ans - 1) : N;
 }
 
 template <size_t N>
