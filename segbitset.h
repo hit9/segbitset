@@ -175,27 +175,7 @@ constexpr segbitset<N>::segbitset(const std::bitset<N>& a) noexcept {
 }
 
 template <size_t N>
-constexpr void segbitset<N>::__copy(const segbitset<N>& o, size_t l, size_t r, size_t x) noexcept {
-  if (!tree[x] && !o.tree[x]) return;  // children of both are all 0, tree won't change.
-  if (l == r) {
-    tree[x] = o.tree[x];
-    return;
-  }
-  auto m = (l + r) >> 1;
-  __copy(o, l, m, __ls(x));
-  __copy(o, r, m + 1, __rs(x));
-  __pushup(x);
-}
-
-template <size_t N>
-constexpr segbitset<N>::segbitset(const __segbitset& o) noexcept {
-  // TODO: performance depends..
-  // which is faster?
-  // 1. copy o.tree directly, x4 time slower than a std::bitset<N> copy.
-  // 2. __copy, but seems working not that fast.
-  // 3. tree reset, and then |= other, seems a bit faster than 2.
-  __copy(o, 1, N, 1);
-}
+constexpr segbitset<N>::segbitset(const __segbitset& o) noexcept : tree(o.tree) {}
 
 template <size_t N>
 constexpr size_t segbitset<N>::__count(size_t l, size_t r, size_t x) const noexcept {
