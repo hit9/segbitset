@@ -8,11 +8,11 @@
 static const std::size_t N_1M_BITS = 100000;
 static std::mt19937 rng(std::random_device{}());
 
-TEST_CASE("benchmark/sparse/1", "benchmarks on sparse dataset (10% set)") {
+TEST_CASE("benchmark/sparse/1", "benchmarks on sparse dataset") {
   std::uniform_int_distribution<std::size_t> distribution(0, N_1M_BITS - 1);
-  // 1% bits are set.
+  // when about 1/50 bits  (about 2%) are set, segbitset performs faster..
   std::bitset<N_1M_BITS> b;
-  for (int i = 0; i < N_1M_BITS / 100.0; i++) {
+  for (int i = 0; i < N_1M_BITS / 50.0; i++) {
     auto j = distribution(rng);
     b.set(j);
   }

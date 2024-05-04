@@ -13,7 +13,7 @@
 // Core acceleration points:
 //  1. any(),none() just reads root bit's value, O(1)
 //  2. quickly skip subtrees that are all 0, for and,or,xor operations.
-//  3. find positions storing true bits faster for sparse bits.
+//  3. find positions storing true bits faster for sparse bits data.
 //
 // Tradeoffs:
 //  1. set(pos),test(pos),flip(pos) now are slower than std::bitset, O(logN).
@@ -477,7 +477,7 @@ constexpr void segbitset<N>::__foreach1(callback& cb, size_t l, size_t r, size_t
 
 template <size_t N>
 constexpr void segbitset<N>::foreach1(callback& cb) const noexcept {
-  __foreach1(cb, 1, N, 1);
+   __foreach1(cb, 1, N, 1);
 }
 
 ////////////////////////////////////////
